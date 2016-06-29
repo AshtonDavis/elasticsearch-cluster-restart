@@ -188,18 +188,26 @@ def wait_for_relocating_shards(node, client)
     puts ""
 end
 
-def restart_node(node)
+def restart_node(node, reboot)
   # Using SSH, send a service restart call
   current_user = ENV['USER']
-  puts "   |- Sending restart request to #{node}..."
-  Net::SSH.start("#{node}", current_user) do |ssh|
-    ssh.exec!("sudo service elasticsearch-01 restart")
-    # It's not necessary to output the service restart, but you can uncomment this if you want to see it.
-    # NOTE: Make sure to comment out the line above, or you'll run the restart twice.
-    #output = ssh.exec!("sudo service elasticsearch-01 restart")
-    #puts output
-  end 
-  puts "      |- Done.".green
+  if reboot == TRUE
+    puts "   |- Sending reboot request to #{node}..."
+    Net::SSH.start("#{node}", current_user) do |ssh|
+      ssh.exec!("sudo shutdown now -r")
+    end 
+    puts "      |- Done.".green
+  else
+    puts "   |- Sending restart request to #{node}..."
+    Net::SSH.start("#{node}", current_user) do |ssh|
+      ssh.exec!("sudo service elasticsearch-01 restart")
+      # It's not necessary to output the service restart, but you can uncomment this if you want to see it.
+      # NOTE: Make sure to comment out the line above, or you'll run the restart twice.
+      #output = ssh.exec!("sudo service elasticsearch-01 restart")
+      #puts output
+    end 
+    puts "      |- Done.".green
+  end
 end
 
 def wait_for_http(node)
@@ -295,18 +303,35 @@ def print_cluster (cluster)
 
 end
 
+def ask_reboot()
+  # Ask whether or not to reboot 
+  print "Perform server reboot? ".blue
+  answer = gets.chomp
+  if answer =~ /^(y|Y)/
+    return TRUE
+  elsif answer =~ /^(n|N)/
+    return FALSE
+  else
+    puts "Invalid selection.  Please choose y[es] or n[o]".red
+    ask_reboot()
+  end
+end
 
 #############
 # GET INPUT #
 #############
 
 puts "*~*~* ELASTICSEARCH CLUSTER RESTART *~*~*".yellow
-puts "Please choose from the following options: ".blue
+puts "This script will run either a service restart or a server reboot on the " \
+     "hostgroup of your choosing. \n \n"
+puts "Please choose from the following options: "
 list_clusters(list_of_clusters)
 # Don't go on until we have a valid answer.
 until elasticsearch_cluster = pick_cluster(list_of_clusters)
     puts "Invalid selection.  Please try again.".red
 end
+
+reboot = ask_reboot()
 
 # Brief on what will happen
 puts "This script will run a rolling restart of these hosts:"
@@ -384,7 +409,7 @@ if elasticsearch_cluster['master'].any?
     if !already_done(previously_run, node)
       client = Elasticsearch::Client.new(host: node)
       # Send the restart command
-      restart_node(node)
+      restart_node(node, reboot)
       # Wait for node to shutdown
       puts "   |- Waiting 15s for node to initiate shutdown..."
       sleep 15
@@ -407,7 +432,7 @@ if elasticsearch_cluster['client'].any?
     if !already_done(previously_run, node)
       client = Elasticsearch::Client.new(host: node)
       # Disable shard allocation
-      restart_node(node)
+      restart_node(node, reboot)
       # Wait for node to shutdown
       puts "   |- Waiting 15s for node to initiate shutdown..."
       # Wait for the node to come back
@@ -431,7 +456,7 @@ elasticsearch_cluster['data'].each do |node|
     # Disable shard allocation
     disable_allocation(client)
     # Send the restart command
-    restart_node(node)
+    restart_node(node, reboot)
     # Wait for node to shutdown
     puts "   |- Waiting 15s for node to initiate shutdown..."
     sleep 15
